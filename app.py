@@ -1,7 +1,9 @@
-"""app.py — 台灣天氣預報 Streamlit 主程式（架構 A：Streamlit 單體 + 分層）。
+"""app.py — 現代台灣天氣預報 Web 應用（Samsung Weather / OpenWeather 液態玻璃風格）。
 
-前端只透過 backend.service 取得資料。UI 採 iOS 液態玻璃風格。
-執行：py -3.12 -m streamlit run app.py
+架構：
+- 簡約大器主畫面，全功能控制項完整收納至側邊欄（st.sidebar）。
+- 主畫面以「Hero 氣象卡 + 四格核心數據 + Altair 7日平滑曲線 + 7日微縮卡 + 互動地圖與時段表」構成。
+- 前端只透過 backend.service 取得資料。
 """
 from __future__ import annotations
 
@@ -22,12 +24,17 @@ from frontend import components as ui
 UMBRELLA_THRESHOLD = 50
 DATA_MAX_AGE_HOURS = 6
 
-st.set_page_config(page_title="台灣天氣預報", page_icon="☀️", layout="wide")
+st.set_page_config(
+    page_title="台灣天氣預報",
+    page_icon="☀️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 inject_glass_css()
 
 
-# ---- 資料初始化與自動更新（只在每次 session 首次執行時做一次） ----
-@st.cache_resource(show_spinner="正在準備天氣資料…")
+# ---- 資料初始化與自動更新 ----
+@st.cache_resource(show_spinner="正在同步中央氣象署資料…")
 def _bootstrap_once():
     return ensure_fresh_data(max_age_hours=DATA_MAX_AGE_HOURS)
 
@@ -35,7 +42,7 @@ def _bootstrap_once():
 status = _bootstrap_once()
 
 
-# ---- 快取查詢（TTL 對齊資料更新頻率；資料更新後可清除快取） ----
+# ---- 快取查詢 ----
 @st.cache_data(ttl=DATA_MAX_AGE_HOURS * 3600, show_spinner=False)
 def cached_regions():
     return service.list_regions()
@@ -61,67 +68,133 @@ def cached_day_map(day: str):
     return service.get_day_all_regions(day)
 
 
-# ---- 標題與資料狀態 ----
-last_updated = service.last_updated()
-subtitle = "資料來源：中央氣象署開放資料（F-D0047-091，逐 12 小時，彙整為每日）"
-ui.header(subtitle)
-
-if status.get("demo"):
-    st.warning("⚠️ 目前顯示的是**示範資料**（找不到有效授權碼或無法連網），"
-               "並非中央氣象署即時預報。設定 CWA_API_KEY 後重新整理即可取得真實資料。")
-elif status.get("error"):
-    st.info(f"自動更新未成功，顯示的是先前抓取的資料。原因：{status['error']}")
-
-st.caption(f"資料最後更新時間：{last_updated or '尚無資料'}　｜　"
-           f"預報單位：每日（由逐 12 小時彙整）")
-
-
-# ---- 沒有任何資料時的處理 ----
+# ---- 讀取基礎資料 ----
 regions = cached_regions()
 if not regions:
-    st.error("目前沒有可用的預報資料。請確認已設定 CWA_API_KEY，"
-             "或執行：py -3.12 update_data.py（本機）／--demo（示範）。")
+    st.error("目前沒有可用的預報資料。請確認已設定 CWA_API_KEY，或執行 update_data.py --demo。")
     st.stop()
 
+days = cached_days()
+last_updated = service.last_updated()
 
-# ---- 控制列：地區 + 日期 ----
-with st.container(key="controls_card"):
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        labels = [r["label"] for r in regions]
-        idx = st.selectbox("選擇縣市", range(len(labels)),
-                           format_func=lambda i: labels[i])
-        geocode = regions[idx]["geocode"]
-    with c2:
-        days = cached_days()
-        day = st.selectbox("地圖日期", days) if days else None
 
-region_label = labels[idx]
+# ===========================================================================
+# 側邊欄控制中心（Sidebar Controls）
+# ===========================================================================
+with st.sidebar:
+    st.markdown("## 🌦️ 台灣天氣預報")
+    st.caption("Taiwan Weather · Modern Glass Edition")
+    st.markdown("---")
+
+    # 1. 選擇地區
+    st.markdown("### 📍 觀測地區")
+    labels = [r["label"] for r in regions]
+    # 預設選中臺北市（若有）
+    default_idx = 0
+    for i, lbl in enumerate(labels):
+        if "臺北" in lbl or "台北" in lbl:
+            default_idx = i
+            break
+    idx = st.selectbox(
+        "選擇縣市",
+        range(len(labels)),
+        index=default_idx,
+        format_func=lambda i: labels[i],
+        label_visibility="collapsed",
+    )
+    selected_region = regions[idx]
+    geocode = selected_region["geocode"]
+    region_label = selected_region["label"]
+
+    # 2. 選擇日期
+    st.markdown("### 📅 檢視日期")
+    day = st.selectbox(
+        "選擇日期",
+        days,
+        index=0 if days else None,
+        label_visibility="collapsed",
+    ) if days else None
+
+    st.markdown("---")
+
+    # 3. 數據同步與控制
+    st.markdown("### ⚙️ 資料狀態與同步")
+    if st.button("🔄 立即同步最新氣象資料"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.rerun()
+
+    update_text = last_updated[:16].replace("T", " ") if last_updated else "暫無資料"
+    st.caption(f"⏱️ 最後同步：{update_text}")
+    st.caption("📡 來源：中央氣象署 F-D0047-091")
+
+    if status.get("demo"):
+        st.warning("⚠️ 示範資料模式\n(未配置有效 API Key)")
+    elif status.get("error"):
+        st.info(f"ℹ️ 沿用已存資料：{status['error']}")
+
+    st.markdown("---")
+
+    # 4. 地圖溫度圖例
+    st.markdown("### 🗺️ 地圖溫度標示")
+    ui.sidebar_legend()
+
+
+# ===========================================================================
+# 主畫面（Main Page Content）
+# ===========================================================================
 daily_df = cached_daily(geocode)
+if daily_df.empty:
+    st.warning("此地區目前尚無預報數據。")
+    st.stop()
 
-# ---- 帶傘提醒（首頁明顯位置）----
-alert = service.umbrella_alert(daily_df, threshold=UMBRELLA_THRESHOLD)
-if alert:
-    with st.container(key="alert_card"):
-        ui.umbrella_reminder(alert, threshold=UMBRELLA_THRESHOLD)
+# 取得所選日期或首日的數據列
+target_row = daily_df.iloc[0]
+if day:
+    match = daily_df[daily_df["day"] == str(day)]
+    if not match.empty:
+        target_row = match.iloc[0]
 
-# ---- 每日高低溫折線圖 ----
+# 帶傘警示判斷
+alert = service.umbrella_alert(daily_df, threshold=UMBRELLA_THRESHOLD, day=day)
+
+# 1. Hero 頂級天氣主卡（Samsung Weather 風格）
+ui.hero_weather_card(county=region_label, today_row=target_row, alert=alert)
+
+# 2. 四格核心天候指標卡（OpenWeather 風格）
+ui.metrics_grid(target_row)
+
+# 3. 未來一週每日氣溫平滑曲線與 7 日微縮卡（Altair 向量渲染）
 with st.container(key="chart_card"):
-    st.subheader(f"{region_label}　一週每日高低溫")
-    if not daily_df.empty:
-        st.caption(f"預報涵蓋日期：{daily_df['day'].min()} ~ {daily_df['day'].max()}")
-    ui.daily_temp_chart(daily_df)
+    st.markdown('<div class="section-title">📈 未來一週氣溫趨勢</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="section-subtitle">{region_label} 一週最高溫與最低溫平滑預測曲線（懸浮檢視詳細數據）</div>',
+        unsafe_allow_html=True,
+    )
+    ui.weekly_temp_chart(daily_df)
+    ui.daily_forecast_strip(daily_df, selected_day=day)
 
-# ---- 資料表 ----
-with st.container(key="table_card"):
-    st.subheader("每日預報資料")
-    ui.daily_table(daily_df)
-    ui.segments_table(cached_segments(geocode))
+# 4. 全台各縣市氣溫地圖與詳細時段數據表（左右兩欄分配）
+col_map, col_table = st.columns([7, 5])
 
-# ---- 全台地圖 ----
-with st.container(key="map_card"):
-    if day:
-        st.subheader(f"{day}　全台各縣市當日最高溫")
-        ui.taiwan_map(cached_day_map(day))
-    else:
-        st.info("沒有可用的地圖日期。")
+with col_map:
+    with st.container(key="map_card"):
+        st.markdown(
+            f'<div class="section-title">🗺️ 全台溫度分布圖</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div class="section-subtitle">檢視日期：{day or "今日"}（依各縣市最高溫著色）</div>',
+            unsafe_allow_html=True,
+        )
+        if day:
+            ui.taiwan_map(cached_day_map(day))
+        else:
+            st.info("沒有可用的地圖日期。")
+
+with col_table:
+    with st.container(key="table_card"):
+        st.markdown('<div class="section-title">📋 每日預報數據</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-subtitle">{region_label} 每日數值與時段拆解</div>', unsafe_allow_html=True)
+        ui.daily_table(daily_df)
+        ui.segments_table(cached_segments(geocode))
