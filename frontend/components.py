@@ -20,12 +20,12 @@ from streamlit_folium import st_folium
 
 from data.geo import coords_for
 
-# 地圖溫度分級配色
+# 地圖溫度分級配色（莫蘭迪降飽和版）
 _TEMP_BINS = [
-    (20, "#3b82f6", "< 20°C (寒冷)"),
-    (25, "#22c55e", "20–25°C (舒適)"),
-    (30, "#f59e0b", "25–30°C (暖熱)"),
-    (999, "#ef4444", "> 30°C (炎熱)"),
+    (20, "#8aafc7", "< 20°C (寒冷)"),
+    (25, "#8fb8a2", "20–25°C (舒適)"),
+    (30, "#c4a882", "25–30°C (暖熱)"),
+    (999, "#c08080", "> 30°C (炎熱)"),
 ]
 
 
@@ -190,10 +190,10 @@ def weekly_temp_chart(daily_df: pd.DataFrame) -> None:
             sort=None,
             axis=alt.Axis(
                 labelAngle=0,
-                labelColor="rgba(255,255,255,0.9)",
+                labelColor="#6b6461",
                 labelFontSize=12,
-                domainColor="rgba(255,255,255,0.25)",
-                tickColor="rgba(255,255,255,0.25)",
+                domainColor="rgba(180,172,168,0.35)",
+                tickColor="rgba(180,172,168,0.35)",
             ),
         ),
         y=alt.Y(
@@ -201,19 +201,19 @@ def weekly_temp_chart(daily_df: pd.DataFrame) -> None:
             title="溫度 (°C)",
             scale=alt.Scale(zero=False, padding=1),
             axis=alt.Axis(
-                labelColor="rgba(255,255,255,0.85)",
-                titleColor="#ffffff",
-                gridColor="rgba(255,255,255,0.12)",
+                labelColor="#6b6461",
+                titleColor="#4a4644",
+                gridColor="rgba(180,172,168,0.22)",
                 domainColor="transparent",
             ),
         ),
         color=alt.Color(
             "指標:N",
-            scale=alt.Scale(domain=["最高溫", "最低溫"], range=["#ff6b6b", "#4dabf7"]),
+            scale=alt.Scale(domain=["最高溫", "最低溫"], range=["#c08080", "#8aafc7"]),
             legend=alt.Legend(
                 title=None,
                 orient="top",
-                labelColor="#ffffff",
+                labelColor="#4a4644",
                 labelFontSize=13,
                 symbolSize=80,
             ),
@@ -342,7 +342,7 @@ def sidebar_legend() -> None:
     )
     items += (
         '<div class="sidebar-legend-item">'
-        '<span class="sidebar-legend-dot" style="background:#9ca3af;"></span>'
+        '<span class="sidebar-legend-dot" style="background:#c8c4c0;"></span>'
         '無資料</div>'
     )
     html = f'<div class="sidebar-legend-row">{items}</div>'
