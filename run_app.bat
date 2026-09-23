@@ -5,5 +5,5 @@ echo ========================================================
 echo   啟動台灣天氣預報應用程式 (Streamlit + CWA)
 echo ========================================================
 echo.
-python -m streamlit run app.py
+python -m streamlit run streamlit_app.py
 pause

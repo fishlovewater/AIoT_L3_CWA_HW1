@@ -47,13 +47,16 @@ vercel.json        # Vercel 設定（函式資源）
 
 ### ⚠️ 常見錯誤：`Found app.py but it does not export ... "handler"`
 
-Vercel 的 Python 偵測會把**根目錄的 `.py` 檔**（例如 Streamlit 版的 `app.py`、
-`bootstrap.py`、`update_data.py`）當成 serverless 函式，並期待它們匯出 `app`/`handler`，
-於是報這個錯。
+Vercel 會**特別偵測根目錄的 `app.py`**（WSGI/ASGI 慣例入口），把它當成 Python 函式並
+期待匯出 `app`/`application`/`handler`。Streamlit 的 `app.py` 沒有這些，於是報錯。
+`.vercelignore` 有時**無法**壓下這個自動偵測。
 
-解法（本專案已處理）：用 `.vercelignore` 把 Streamlit 版的檔案排除，只讓 `api/` 與
-`public/` 進到 Vercel。這樣 Vercel 只會把 `api/forecast.py` 當函式，`app.py` 完全不參與部署。
-若你日後新增其他根目錄 `.py`，記得一併加進 `.vercelignore`。
+**本專案的解法：把 Streamlit 進入點改名為 `streamlit_app.py`**（根目錄不再有 `app.py`），
+Vercel 就不會偵測到 Python 應用，錯誤消失。同時保留 `.vercelignore` 排除其他 Streamlit 檔。
+
+- 本機啟動 Streamlit 改用：`streamlit run streamlit_app.py`（`run_app.bat` 已更新）。
+- Streamlit Community Cloud 匯入時，主程式選 `streamlit_app.py`。
+- 若你日後又在根目錄新增 `index.py` / `server.py` 這類名稱，Vercel 也可能偵測，盡量避免。
 
 ---
 

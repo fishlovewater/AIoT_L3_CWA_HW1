@@ -13,7 +13,7 @@
 
 | 版本 | 進入點 | 部署平台 | 說明 |
 |------|--------|----------|------|
-| **Streamlit 版** | `app.py` + `backend/` + `frontend/` | Streamlit Community Cloud | 單體式、含 SQLite 快取、可本機 `streamlit run` |
+| **Streamlit 版** | `streamlit_app.py` + `backend/` + `frontend/` | Streamlit Community Cloud | 單體式、含 SQLite 快取、可本機 `streamlit run` |
 | **Vercel 版** | `public/` + `api/` | Vercel | 靜態前端 + Python 無伺服器函式，直接讀 CWA（無資料庫）|
 
 > 為什麼有兩套？**Vercel 無法執行 Streamlit**（需要常駐伺服器）。要上 Vercel 必須用
@@ -66,7 +66,7 @@ py -3.12 update_data.py --demo     # 無授權碼時用示範資料（畫面會�
 
 ### 4. 啟動網站
 ```powershell
-py -3.12 -m streamlit run app.py
+py -3.12 -m streamlit run streamlit_app.py
 ```
 （Windows 也可直接雙擊 `run_app.bat`。）瀏覽器開 `http://localhost:8501`。
 
@@ -91,7 +91,7 @@ API 失敗保留舊資料、帶傘判斷。
 
 ### A. Streamlit Community Cloud（Streamlit 版）
 1. 程式碼推上 GitHub。
-2. 到 https://share.streamlit.io 匯入 repo，主程式選 `app.py`。
+2. 到 https://share.streamlit.io 匯入 repo，主程式選 `streamlit_app.py`。
 3. 在 App 的 **Settings → Secrets** 設定 `CWA_API_KEY`（雲端不讀 `.env`）。
 4. Deploy。
    - 注意：Community Cloud 的 SQLite 是暫存，容器重啟會清空，app 啟動時會自動重抓。
@@ -108,7 +108,7 @@ API 失敗保留舊資料、帶傘判斷。
 ## 專案結構
 
 ```
-app.py                 # Streamlit 主程式（架構 A）
+streamlit_app.py       # Streamlit 主程式（架構 A；改名自 app.py 以避免 Vercel 誤判）
 bootstrap.py           # 初始化 + 自動更新
 update_data.py         # 抓取 CWA -> 寫入 SQLite（可重複執行、失敗保留舊資料）
 backend/
