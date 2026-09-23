@@ -56,10 +56,11 @@ def _static_response(start_response, path):
 
 def app(environ, start_response):
     """WSGI 進入點。"""
-    path = environ.get("PATH_INFO", "/")
+    path = environ.get("PATH_INFO", "/") or "/"
     method = environ.get("REQUEST_METHOD", "GET").upper()
 
-    if path == "/api/forecast":
+    # 容忍 Vercel 可能改寫路徑：只要路徑含 api/forecast 就走 API
+    if "api/forecast" in path or path == "/api" or path.endswith("/forecast"):
         if method != "GET":
             return _json_response(start_response, "405 Method Not Allowed",
                                   {"success": False, "error": "只接受 GET"})
