@@ -17,7 +17,7 @@
 
 1. **先取得真實 API 範例，再定稿解析程式**：不可只憑欄位名稱推定 JSON 結構。務必先保存一份實際回應（見「三、資料擷取」的步驟 4.5），核對 `weatherElement` 實際有哪些 `elementName`、時間區間如何表示，再撰寫 `parse()`。
 
-2. **保留原始預報時段（不做每日覆蓋）**：CWA 一週預報同一天可能有多個時段（例如每 12 小時一段）。本專案**保留原始時段**，資料表唯一鍵為 `(county, town, startTime, endTime)`，避免同日多筆互相覆蓋。若需要「每日高低溫」，另以 SQL 彙整（`MIN(minT)`、`MAX(maxT)` group by 日期），不改變底層資料粒度。
+2. **保留原始預報時段（不做每日覆蓋）**：CWA 一週預報同一天可能有多個時段（例如每 12 小時一段）。本專案**保留原始時段**，資料表唯一鍵為 `(geocode, startTime, endTime)`，避免同日多筆互相覆蓋。若需要「每日高低溫」，另以 SQL 彙整（`MIN(minT)`、`MAX(maxT)` group by 日期），不改變底層資料粒度。
 
 3. **地區以縣市 + 鄉鎮（＋行政區代碼）識別**：不可只用單一 `regionName`，否則不同縣市的同名鄉鎮會混淆。優先使用 CWA 提供的行政區代碼（`geocode`）作為穩定識別。
 
@@ -277,30 +277,61 @@ conn = sqlite3.connect('data.db')
 
 ### 步驟 9：資料庫設計 — `TemperatureForecasts` 表
 
+唯一鍵改為 `(geocode, startTime, endTime)`，保留原始時段、以行政區代碼穩定識別（決策 2、3）。同時保存資料抓取時間，供畫面顯示「最後更新時間」（決策 6）。
+
 ```sql
 CREATE TABLE IF NOT EXISTS TemperatureForecasts (
-    id          INTEGER PRIMARY KEY,
-    regionName  TEXT,
-    dataDate    TEXT,
-    minT        REAL,
-    maxT        REAL
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    geocode    TEXT,              -- 行政區代碼（穩定識別）
+    county     TEXT,              -- 縣市
+    town       TEXT,              -- 鄉鎮
+    startTime  TEXT,              -- 時段起（原始，不截成日期）
+    endTime    TEXT,              -- 時段訖
+    minT       REAL,              -- 可為 NULL（缺值）
+    maxT       REAL,              -- 可為 NULL（缺值）
+    fetchedAt  TEXT,              -- 本筆資料抓取時間（ISO8601）
+    UNIQUE (geocode, startTime, endTime)
 );
 ```
 
-寫入資料（用 Pandas 直接寫入）：
+**寫入用 upsert，不要用 `to_sql(if_exists='replace')`**（後者會砍掉整表與唯一鍵約束）：
+
 ```python
-df.to_sql('TemperatureForecasts', conn, if_exists='replace', index=False)
+def save(conn, records, fetched_at):
+    conn.executemany("""
+        INSERT INTO TemperatureForecasts
+            (geocode, county, town, startTime, endTime, minT, maxT, fetchedAt)
+        VALUES (:geocode, :county, :town, :startTime, :endTime, :minT, :maxT, :fetchedAt)
+        ON CONFLICT(geocode, startTime, endTime) DO UPDATE SET
+            minT=excluded.minT, maxT=excluded.maxT, fetchedAt=excluded.fetchedAt
+    """, [{**r, 'fetchedAt': fetched_at} for r in records])
+    conn.commit()
 ```
 
 ### 步驟 10：查詢資料驗證（SQL）
 
-驗證資料是否正確寫入：
 ```sql
--- 取得所有地區名稱
-SELECT DISTINCT regionName FROM TemperatureForecasts;
+-- 取得所有地區（用縣市+鄉鎮，避免同名混淆）
+SELECT DISTINCT county, town, geocode FROM TemperatureForecasts ORDER BY county, town;
 
--- 查詢特定地區
-SELECT * FROM TemperatureForecasts WHERE regionName = '中部地區';
+-- 查詢特定地區的原始時段預報
+SELECT startTime, endTime, minT, maxT
+FROM TemperatureForecasts
+WHERE geocode = '6300500'
+ORDER BY startTime;
+
+-- 每日高低溫彙整（決策 2：需要每日視圖時用）
+SELECT substr(startTime, 1, 10) AS day,
+       MIN(minT) AS dayMin,
+       MAX(maxT) AS dayMax
+FROM TemperatureForecasts
+WHERE geocode = '6300500'
+GROUP BY day
+ORDER BY day;
+
+-- 可用日期清單（給日期選擇器用，決策：日期選項來自現有資料）
+SELECT DISTINCT substr(startTime, 1, 10) AS day
+FROM TemperatureForecasts ORDER BY day;
 ```
 
 ---
@@ -336,51 +367,51 @@ df = pd.read_sql_query('SELECT * FROM TemperatureForecasts', conn)
 
 ### 功能 1（步驟 13）：下拉選單選擇地區
 
-- **需要的資料**：所有地區名稱清單。
-- **資料來源**：`SELECT DISTINCT regionName FROM TemperatureForecasts`。
-- **如何製作**：
+- **需要的資料**：縣市 + 鄉鎮清單（用 geocode 識別，避免同名混淆）。
+- **資料來源**：`SELECT DISTINCT county, town, geocode FROM TemperatureForecasts`。
+- **如何製作**：顯示「縣市 鄉鎮」，實際用 geocode 查詢。
   ```python
-  regions = df['regionName'].unique()
-  selected = st.selectbox('Select Region', regions)
-  filtered = df[df['regionName'] == selected]
+  regions = service.list_regions()   # [{'label':'臺北市 中正區','geocode':'6300500'}, ...]
+  labels = [r['label'] for r in regions]
+  idx = st.selectbox('選擇地區', range(len(labels)), format_func=lambda i: labels[i])
+  geocode = regions[idx]['geocode']
   ```
-- 下拉選單以液態玻璃卡片包覆。
 
 ### 功能 2（步驟 14）：繪製折線圖（一週最高最低溫）
 
-- **需要的資料**：選定地區未來一週的 `dataDate`、`minT`、`maxT`。
-- **資料來源**：由步驟 13 過濾後的 DataFrame。
-- **如何製作**：以日期為 X 軸，畫兩條線（MaxT、MinT）。
+- **需要的資料**：選定地區的時段序列 `startTime`、`minT`、`maxT`。
+- **資料來源**：`service.get_region_week(geocode)`（保留原始時段）。
+- **如何製作**：以時段起始時間為 X 軸，畫兩條線（MaxT、MinT）。缺值的點自動斷開。
   ```python
   import matplotlib.pyplot as plt
   fig, ax = plt.subplots()
-  ax.plot(filtered['dataDate'], filtered['maxT'], marker='o', label='MaxT')
-  ax.plot(filtered['dataDate'], filtered['minT'], marker='o', label='MinT')
-  ax.legend()
+  ax.plot(df['startTime'], df['maxT'], marker='o', label='MaxT')
+  ax.plot(df['startTime'], df['minT'], marker='o', label='MinT')
+  ax.legend(); fig.autofmt_xdate()
   st.pyplot(fig)
   ```
-  （亦可用 `st.line_chart(filtered.set_index('dataDate')[['maxT','minT']])`。）
+  若要「每日」視圖，改用每日彙整查詢（步驟 10）當資料來源。
 
 ### 功能 3（步驟 15）：顯示資料表格
 
-- **需要的資料**：選定地區的一週資料（Date、MinT、MaxT）。
-- **資料來源**：過濾後的 DataFrame。
+- **需要的資料**：選定地區的時段資料（時段、MinT、MaxT）。
+- **資料來源**：同功能 2 的 DataFrame。
 - **如何製作**：
   ```python
-  st.dataframe(filtered[['dataDate', 'minT', 'maxT']])
+  st.dataframe(df[['startTime', 'endTime', 'minT', 'maxT']],
+               use_container_width=True)
   ```
-- 表格外層以毛玻璃容器呈現，清楚呈現一週資料。
 
 ### 功能 4（步驟 16）：整合 Web App 介面
 
-- 把「下拉選單 + 折線圖 + 資料表」整合到同一頁面。
-- 版面：標題 → 地區選擇 → 折線圖 → 資料表，全部以液態玻璃卡片分區。
+- 把「下拉選單 + 折線圖 + 資料表」整合到同一頁面，並在頂部顯示**資料最後更新時間**與**目前顯示的預報時段範圍**（決策 6）。
+- 版面：標題（含更新時間）→ 地區選擇 → 折線圖 → 資料表，各區以液態玻璃容器分區（用 `st.container()`，見附錄 A.2）。
 
 ### 功能 5（步驟 17）：進階 — 台灣地圖視覺化（Folium）
 
-- **需要的資料**：各地區的代表座標（經緯度）+ 該地區溫度；平均溫度分級顏色。
-- **資料來源**：地區座標可自建對照表（地區名 → lat/lng）；溫度來自資料庫。
-- **如何製作**：用 Folium 畫台灣地圖，依平均溫度上色。
+- **需要的資料**：各地區座標（經緯度）+ 該地區溫度；平均溫度分級顏色。
+- **資料來源**：座標用 `geocode → (lat, lng)` 對照表（`data/geo.py`）；溫度來自資料庫每日彙整查詢。用 geocode 對座標，避免同名鄉鎮對錯位置。
+- **如何製作**：用 Folium 畫台灣地圖，依平均溫度上色。缺座標或缺值的點略過。
   | 平均溫度 | 顏色 |
   |----------|------|
   | < 20°C | 藍 |
@@ -390,25 +421,38 @@ df = pd.read_sql_query('SELECT * FROM TemperatureForecasts', conn)
   ```python
   import folium
   from streamlit_folium import st_folium
+  from data.geo import GEO_COORDS   # {geocode: (lat, lng)}
+
   m = folium.Map(location=[23.7, 121], zoom_start=7)
-  for _, row in geo_df.iterrows():
+  for row in day_df.itertuples():
+      coord = GEO_COORDS.get(row.geocode)
+      if not coord or row.minT is None or row.maxT is None:
+          continue
+      avg = (row.minT + row.maxT) / 2
       folium.CircleMarker(
-          location=[row['lat'], row['lng']],
-          radius=10, color=color_by_temp(row['avgT']),
-          fill=True, popup=f"{row['regionName']}: {row['avgT']}°C"
+          location=coord, radius=10, fill=True,
+          color=color_by_temp(avg),
+          popup=f"{row.county} {row.town}: {avg:.0f}°C"
       ).add_to(m)
   st_folium(m)
   ```
 
 ### 功能 6（步驟 18）：選擇日期顯示地圖
 
-- **需要的資料**：某一日各地區的溫度。
-- **資料來源**：`SELECT * FROM TemperatureForecasts WHERE dataDate = ?`。
-- **如何製作**：加一個日期選擇器，選定日期後更新地圖顏色。
+- **需要的資料**：某一日各地區的溫度（以每日彙整）。
+- **資料來源**：可用日期清單 + 該日彙整查詢（見步驟 10）。
+- **如何製作**：**日期選項來自資料庫實際有的日期**（避免預設今天但資料庫沒有而空白）。
   ```python
-  date = st.date_input('Select Date')
-  day_df = df[df['dataDate'] == str(date)]
-  # 依 day_df 重新繪製地圖
+  available_days = service.available_days()      # 從 DB 取實際有的日期
+  if not available_days:
+      st.warning('目前沒有可用的預報資料，請先更新資料。')
+  else:
+      day = st.selectbox('選擇日期', available_days)  # 用 selectbox 限定有資料的日期
+      day_df = service.get_day_all_regions(day)
+      if day_df.empty:
+          st.info(f'{day} 沒有預報資料。')
+      else:
+          ui.taiwan_map(day_df)
   ```
 
 ---
@@ -432,7 +476,7 @@ df = pd.read_sql_query('SELECT * FROM TemperatureForecasts', conn)
 
 - **程式結構清晰**：擷取、處理、資料庫、UI 分成不同函式／模組。
 - **錯誤處理機制**：API 逾時、JSON 結構改變、缺值都要 try/except 處理。
-- **重複執行不重複插入**：寫入前先清空或用 `if_exists='replace'`／唯一鍵避免重複。
+- **重複執行不重複插入**：用唯一鍵 `(geocode, startTime, endTime)` + upsert（`ON CONFLICT ... DO UPDATE`），不要用 `to_sql(if_exists='replace')`（會砍掉整表與約束）。
 - **良好的註解**：關鍵邏輯加上說明。
 
 ```python
@@ -449,7 +493,7 @@ def fetch_forecast():
 
 ---
 
-## 十、部署：上傳 GitHub（步驟 21）
+## 十、部署與資料更新（步驟 21）
 
 ### 步驟 21：版本管理與備份
 
@@ -465,8 +509,35 @@ def fetch_forecast():
    git commit -m "Taiwan Weather Forecast app"
    git push -u origin main
    ```
-- 建議加上 `.gitignore`（排除 `data.db`、`.env`、API Key）。
-- 可進一步部署到 Streamlit Community Cloud（免費）對外分享。
+- `.gitignore` 排除 `data.db`、`.env`、`sample_response.json`。
+
+### 部署與更新機制（決策 4：兩者共用同一份資料、同一環境）
+
+關鍵原則：**更新資料的程式，要跑在「網站讀取資料的同一個環境」**。本機排程更新本機 `data.db`，並不會更新雲端那份，兩者是不同檔案。因此把更新內建到 app：
+
+**做法：app 自行更新（推薦第一版）**
+- app 啟動時先 `init_db()`，若資料庫為空或 `fetchedAt` 過舊，就自行呼叫一次更新。
+- 之後每次使用者互動時，用快取控制更新頻率（快取過期才重新抓 API 寫入）。
+- 這樣不論部署在本機或雲端，資料更新都與網站在同一環境、共用同一份資料。
+
+```python
+def ensure_fresh_data(max_age_hours=6):
+    """app 啟動 / 互動時呼叫：資料太舊或不存在就自行更新。"""
+    database.init_db()
+    last = database.last_fetched_at()   # 讀 max(fetchedAt)
+    if last is None or _older_than(last, max_age_hours):
+        update_data.run()               # 抓 API → 寫入同一份 DB
+```
+
+**部署選項比較**
+
+| 部署方式 | 資料儲存 | 更新方式 | 注意 |
+|----------|----------|----------|------|
+| 本機執行 | 本機 `data.db` | app 內建更新 或 本機排程（同機） | 適合開發／課堂展示 |
+| Streamlit Community Cloud | 容器內 `data.db`（**暫存，重啟即消失**）| app 內建更新（啟動時重抓）| 免費、簡單；資料非持久 |
+| 雲端主機 + 雲端資料庫 | 外部 Postgres / Turso 等 | app 內建更新 或 雲端排程 | 正式對外部署建議此法，資料才持久 |
+
+> 重點：SQLite 在 Community Cloud 只是暫存檔，容器重啟就清空。課程展示可接受（靠 app 啟動時重抓）；若要資料持久或多人共用，改用雲端資料庫（如 Turso/libSQL 或 Postgres），把 `database.py` 的連線換掉即可，其餘分層不變。
 
 ---
 
@@ -550,17 +621,37 @@ div[data-baseweb="select"] > div,
 """, unsafe_allow_html=True)
 ```
 
-### A.2 用玻璃卡片包住每個區塊
+### A.2 用玻璃卡片包住每個區塊（正確做法）
+
+**不要**用兩次 `st.markdown` 輸出開、關 `<div>` 去夾中間的元件——Streamlit 會把 HTML 與元件各自獨立渲染，`<div>` 包不住中間的 selectbox／圖表。
+
+正確做法：用**帶 `key` 的 `st.container()`**，再用 CSS 針對該容器的自動屬性（`.st-key-<key>`）套玻璃樣式。這樣容器內的所有元件都會被真正包在同一張卡片裡。
 
 ```python
-st.markdown('<div class="glass-header"><h1>Taiwan Weather Forecast</h1></div>',
-            unsafe_allow_html=True)
+# CSS：針對帶 key 的容器上玻璃樣式（Streamlit 會產生 class st-key-<key>）
+st.markdown("""
+<style>
+.st-key-region_card, .st-key-chart_card, .st-key-map_card {
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 24px;
+    box-shadow: 0 8px 32px rgba(31,38,135,0.2);
+    padding: 20px 24px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-with st.container():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    selected = st.selectbox('選擇地區', regions)
-    st.markdown('</div>', unsafe_allow_html=True)
+# 用 key 的 container 真正包住元件
+with st.container(key="region_card"):
+    selected = st.selectbox('選擇地區', labels)
+
+with st.container(key="chart_card"):
+    ui.temperature_chart(week_df)
 ```
+
+> `st.container(key=...)` 產生的 CSS class 形如 `st-key-region_card`。若 Streamlit 版本的 class 命名不同，用瀏覽器開發者工具確認實際 class 再調整選擇器。
 
 ### A.3 設計規範（Design Tokens）
 
