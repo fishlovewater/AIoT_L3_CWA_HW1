@@ -53,6 +53,8 @@ def init_db(path: Optional[str] = None) -> None:
                 geocode   TEXT,
                 county    TEXT,
                 town      TEXT,
+                lat       REAL,          -- 來源提供的緯度
+                lng       REAL,          -- 來源提供的經度
                 startTime TEXT NOT NULL,
                 endTime   TEXT NOT NULL,
                 minT      REAL,          -- 可為 NULL（缺值）
@@ -103,6 +105,8 @@ def save(records: Iterable[dict], fetched_at: str,
             "geocode": r["geocode"],
             "county": r.get("county"),
             "town": r.get("town"),
+            "lat": r.get("lat"),
+            "lng": r.get("lng"),
             "startTime": r["startTime"],
             "endTime": r["endTime"],
             "minT": r.get("minT"),
@@ -116,12 +120,16 @@ def save(records: Iterable[dict], fetched_at: str,
         conn.executemany(
             """
             INSERT INTO TemperatureForecasts
-                (geocode, county, town, startTime, endTime, minT, maxT, pop, fetchedAt)
+                (geocode, county, town, lat, lng,
+                 startTime, endTime, minT, maxT, pop, fetchedAt)
             VALUES
-                (:geocode, :county, :town, :startTime, :endTime, :minT, :maxT, :pop, :fetchedAt)
+                (:geocode, :county, :town, :lat, :lng,
+                 :startTime, :endTime, :minT, :maxT, :pop, :fetchedAt)
             ON CONFLICT (geocode, startTime, endTime) DO UPDATE SET
                 county    = excluded.county,
                 town      = excluded.town,
+                lat       = excluded.lat,
+                lng       = excluded.lng,
                 minT      = excluded.minT,
                 maxT      = excluded.maxT,
                 pop       = excluded.pop,

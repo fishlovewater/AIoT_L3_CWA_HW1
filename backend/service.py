@@ -82,13 +82,13 @@ def get_day_all_regions(day: str, path: Optional[str] = None) -> pd.DataFrame:
     return db.query_df(
         """
         SELECT
-            geocode, county, town,
+            geocode, county, town, lat, lng,
             MIN(minT) AS dayMinT,
             MAX(maxT) AS dayMaxT,
             MAX(pop)  AS dayPop
         FROM TemperatureForecasts
         WHERE substr(startTime, 1, 10) = ?
-        GROUP BY geocode, county, town
+        GROUP BY geocode, county, town, lat, lng
         ORDER BY county, town
         """,
         (str(day),),

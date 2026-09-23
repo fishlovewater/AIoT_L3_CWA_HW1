@@ -26,13 +26,20 @@ import requests
 log = logging.getLogger(__name__)
 
 CWA_BASE = "https://opendata.cwa.gov.tw/api/v1/rest/datastore"
-DATASET_ID = "F-D0047-091"  # 一週逐 12 小時
+DATASET_ID = "F-D0047-091"  # 一週逐 12 小時（實際 Location 為 22 縣市層級）
 DEFAULT_TIMEOUT = 30
 
-# 溫度與降雨機率在不同版本可能的 element 名稱（大小寫皆容忍）
-MIN_T_NAMES = {"MinT", "最低溫度"}
-MAX_T_NAMES = {"MaxT", "最高溫度"}
-POP_NAMES = {"PoP12h", "PoP", "12小時降雨機率"}
+# 已用實際 API 核對（見 DECISIONS.md）。這裡列出實際名稱並保留舊版別名以增強容錯。
+# ElementName（實際為中文）
+MIN_T_NAMES = {"最低溫度", "MinT"}
+MAX_T_NAMES = {"最高溫度", "MaxT"}
+POP_NAMES = {"12小時降雨機率", "PoP12h", "PoP"}
+
+# ElementValue 內的數值鍵（實際名稱 + 舊版別名）
+_VALUE_KEYS = (
+    "MaxTemperature", "MinTemperature", "Temperature",
+    "ProbabilityOfPrecipitation", "value",
+)
 
 
 class FetchError(Exception):
@@ -145,25 +152,27 @@ def _with_parent(loc: dict, county: Optional[str]) -> dict:
     return loc
 
 
-def _element_value(time_entry: dict, prefer_numeric: bool = True) -> Optional[str]:
+def _element_value(time_entry: dict) -> Optional[str]:
     """從一個 Time 條目取出數值字串。相容 ElementValue/elementValue 結構：
-    - 新版：[{"MinT": "20"}] 或 [{"value": "20", "measures": "..."}]
+    - 實際：[{"MaxTemperature": "29"}] / [{"MinTemperature": "25"}]
+            / [{"ProbabilityOfPrecipitation": "10"}]
     - 舊版：[{"value": "20"}]
-    回傳字串或 None。"""
+    回傳字串或 None（含 '-' 缺值）。"""
     ev = _get(time_entry, "ElementValue", "elementValue")
     if not isinstance(ev, list) or not ev:
         return None
     first = ev[0]
     if not isinstance(first, dict) or not first:
         return None
-    # 優先找看起來像數值的欄位
-    # 常見鍵："value"、"MinT"、"MaxT"、"ProbabilityOfPrecipitation"、"Temperature"
+    # 先找已知的數值鍵
+    for k in _VALUE_KEYS:
+        if k in first:
+            return str(first[k])
+    # 退回：找第一個看起來像數字的值，否則取第一個值
     candidates = list(first.values())
-    if prefer_numeric:
-        for v in candidates:
-            if _looks_number(v):
-                return str(v)
-    # 退回第一個值
+    for v in candidates:
+        if _looks_number(v):
+            return str(v)
     return str(candidates[0]) if candidates else None
 
 
@@ -184,6 +193,19 @@ def _to_int(v: Any) -> Optional[int]:
         return None
     try:
         return int(round(float(s)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float(v: Any) -> Optional[float]:
+    """轉浮點；空值或非數字回 None。用於經緯度。"""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s in ("", "-", "None", "null"):
+        return None
+    try:
+        return float(s)
     except (TypeError, ValueError):
         return None
 
@@ -225,11 +247,16 @@ def parse(data: dict) -> ParseResult:
 
     for loc in locations:
         try:
-            town = _get(loc, "LocationName", "locationName")
+            name = _get(loc, "LocationName", "locationName")
             geocode = _get(loc, "Geocode", "geocode")
-            county = loc.get("_parentCounty")
+            lat = _to_float(_get(loc, "Latitude", "latitude"))
+            lng = _to_float(_get(loc, "Longitude", "longitude"))
+            # 此資料集 Location 為縣市層級：以 LocationName 作為 county；
+            # town 同值以保持 schema 一致（見 DECISIONS.md）。
+            county = loc.get("_parentCounty") or name
+            town = name
             elements = _get(loc, "WeatherElement", "weatherElement")
-            if town is None or not isinstance(elements, list):
+            if name is None or not isinstance(elements, list):
                 result.skipped += 1
                 continue
 
@@ -261,6 +288,8 @@ def parse(data: dict) -> ParseResult:
                     "geocode": str(geocode) if geocode is not None else None,
                     "county": str(county) if county is not None else None,
                     "town": str(town),
+                    "lat": lat,
+                    "lng": lng,
                     "startTime": start,
                     "endTime": end,
                     "minT": _to_int(min_idx.get(key)),
@@ -292,7 +321,8 @@ def validate(result: ParseResult) -> None:
     """基本檢查：非空、欄位齊全、至少有部分溫度數值。不通過丟 FetchError。"""
     if not result.records:
         raise FetchError("解析結果為空，拒絕以空資料覆寫現有預報。")
-    required = {"geocode", "county", "town", "startTime", "endTime", "minT", "maxT", "pop"}
+    required = {"geocode", "county", "town", "lat", "lng",
+                "startTime", "endTime", "minT", "maxT", "pop"}
     sample = result.records[0]
     missing = required - set(sample.keys())
     if missing:
