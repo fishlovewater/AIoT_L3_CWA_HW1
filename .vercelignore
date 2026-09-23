@@ -1,0 +1,29 @@
+# Vercel 只需要 api/（函式）與 public/（靜態前端）。
+# 以下為 Streamlit 版與開發用檔案，排除以免被誤當成 serverless 函式或增加體積。
+
+# Streamlit 版進入點與模組（會被 Vercel 誤判為 Python 函式）
+app.py
+bootstrap.py
+update_data.py
+backend/
+frontend/
+data/
+
+# 測試與文件
+tests/
+*.md
+image.png
+run_app.bat
+
+# 本機 / 環境
+.streamlit/
+.venv/
+venv/
+env/
+__pycache__/
+.pytest_cache/
+data.db
+*.db
+
+# 根目錄的 requirements 是給 Streamlit 版的；Vercel 函式用 api/requirements.txt
+requirements.txt

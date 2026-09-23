@@ -42,7 +42,18 @@ public/
   app.js           # 前端邏輯（呼叫 /api/forecast、畫圖表/表格/地圖/帶傘提醒）
   styles.css       # 液態玻璃樣式
 vercel.json        # Vercel 設定（函式資源）
+.vercelignore      # 排除 Streamlit 版檔案，避免被誤當成函式
 ```
+
+### ⚠️ 常見錯誤：`Found app.py but it does not export ... "handler"`
+
+Vercel 的 Python 偵測會把**根目錄的 `.py` 檔**（例如 Streamlit 版的 `app.py`、
+`bootstrap.py`、`update_data.py`）當成 serverless 函式，並期待它們匯出 `app`/`handler`，
+於是報這個錯。
+
+解法（本專案已處理）：用 `.vercelignore` 把 Streamlit 版的檔案排除，只讓 `api/` 與
+`public/` 進到 Vercel。這樣 Vercel 只會把 `api/forecast.py` 當函式，`app.py` 完全不參與部署。
+若你日後新增其他根目錄 `.py`，記得一併加進 `.vercelignore`。
 
 ---
 
