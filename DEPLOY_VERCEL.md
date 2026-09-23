@@ -10,53 +10,56 @@ WebSocket 連線的 Python 伺服器；而 Vercel 是「無伺服器（serverles
 
 ```
 瀏覽器
-  │  載入靜態頁面
+  │  所有請求
   ▼
-public/index.html + app.js + styles.css   ← 靜態前端（液態玻璃 UI、Leaflet 地圖、Chart.js 圖表）
-  │  fetch("/api/forecast")
-  ▼
-api/forecast.py  ← Vercel Python 無伺服器函式
-  │  直接呼叫 CWA API（無 SQLite，改用函式內短期快取）
-  ▼
-中央氣象署 F-D0047-091
+app.py（Vercel Python WSGI 入口，單一應用）
+  ├─ GET /api/forecast  → 直接呼叫 CWA、彙整成每日、回 JSON
+  └─ 其他路徑           → 服務 public/ 的靜態前端（index.html / app.js / styles.css）
+        │
+        ▼
+   中央氣象署 F-D0047-091
 ```
 
-- **沒有資料庫**：Vercel 函式的檔案系統是暫時且唯讀的，無法存 SQLite。改為每次請求
-  直接讀 CWA，並用「函式內記憶體快取 30 分鐘」＋「邊緣 CDN 快取」降低請求量。
+- **單一 Python 入口**：Vercel 新版 Python builder 把整個專案當成一個 Python app，
+  尋找根目錄 `app.py` 的 `app`/`application`/`handler`。本專案的 `app.py` 就是這個入口
+  （WSGI），由它自己路由：API 走函式邏輯，其他路徑回傳 `public/` 靜態檔。
+- **沒有資料庫**：Vercel 檔案系統是暫時且唯讀的，無法存 SQLite。改為每次請求直接讀 CWA，
+  並用「行程內記憶體快取 30 分鐘」＋「邊緣 CDN 快取」降低請求量。
 - **授權碼**：放在 Vercel 專案的環境變數 `CWA_API_KEY`，不會出現在前端或版本庫。
 
-> 原本的 Streamlit 版本（`app.py`、`backend/`、`frontend/`）仍完整保留，可繼續部署到
-> **Streamlit Community Cloud**。兩套並存，Vercel 版走 `api/` + `public/`。
+> Streamlit 版（`streamlit_app.py`、`backend/`、`frontend/`）仍完整保留，可部署到
+> **Streamlit Community Cloud**。兩套並存：Vercel 版走 `app.py` + `api/_cwa.py` + `public/`。
 
 ---
 
-## 這次為 Vercel 新增的檔案
+## 這次為 Vercel 準備的檔案
 
 ```
+app.py             # ★ Vercel Python 入口（WSGI）：/api/forecast + 靜態前端路由
+pyproject.toml     # 指定 Vercel 入口 app:app 與依賴（只有 requests）
 api/
   _cwa.py          # 輕量 CWA 存取＋解析＋每日彙整（只依賴 requests）
-  forecast.py      # 無伺服器函式，回傳 JSON 給前端
-  requirements.txt # 函式依賴（只有 requests）
 public/
   index.html       # 靜態前端
   app.js           # 前端邏輯（呼叫 /api/forecast、畫圖表/表格/地圖/帶傘提醒）
   styles.css       # 液態玻璃樣式
-vercel.json        # Vercel 設定（函式資源）
-.vercelignore      # 排除 Streamlit 版檔案，避免被誤當成函式
+vercel.json        # 把所有路徑導向 app.py
+.vercelignore      # 排除 Streamlit 版檔案與根目錄 requirements.txt
 ```
 
-### ⚠️ 常見錯誤：`Found app.py but it does not export ... "handler"`
+### 這是怎麼解掉 `Found app.py ...` 錯誤的
 
-Vercel 會**特別偵測根目錄的 `app.py`**（WSGI/ASGI 慣例入口），把它當成 Python 函式並
-期待匯出 `app`/`application`/`handler`。Streamlit 的 `app.py` 沒有這些，於是報錯。
-`.vercelignore` 有時**無法**壓下這個自動偵測。
+Vercel 新版 Python builder 會把整包當成單一 Python app，硬要找根目錄 `app.py` 的
+`app`/`application`/`handler`。與其對抗它，本專案**順著它**：
 
-**本專案的解法：把 Streamlit 進入點改名為 `streamlit_app.py`**（根目錄不再有 `app.py`），
-Vercel 就不會偵測到 Python 應用，錯誤消失。同時保留 `.vercelignore` 排除其他 Streamlit 檔。
+1. 提供根目錄 `app.py`，匯出 WSGI `app`（並同時別名 `application`、`handler`，不論它找哪個都對得上）。
+2. 這個 `app` 自己路由：`/api/forecast` 回 JSON、其餘回 `public/` 靜態檔。
+3. `pyproject.toml` 的 `[tool.vercel] entrypoint = "app:app"` 明確指定入口。
+4. `.vercelignore` 排除根目錄 `requirements.txt`（Streamlit 版的、很重），讓 Vercel 只用
+   `pyproject.toml` 的輕量依賴（`requests`）。
 
-- 本機啟動 Streamlit 改用：`streamlit run streamlit_app.py`（`run_app.bat` 已更新）。
-- Streamlit Community Cloud 匯入時，主程式選 `streamlit_app.py`。
-- 若你日後又在根目錄新增 `index.py` / `server.py` 這類名稱，Vercel 也可能偵測，盡量避免。
+> 注意：Vercel 版的 `app.py` 與 Streamlit 版無關；Streamlit 版入口是 `streamlit_app.py`，
+> 本機啟動用 `streamlit run streamlit_app.py`。
 
 ---
 

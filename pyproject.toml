@@ -1,0 +1,12 @@
+[project]
+name = "taiwan-weather-vercel"
+version = "1.0.0"
+description = "Taiwan Weather Forecast - Vercel serverless API"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31",
+]
+
+# 告訴 Vercel 這個 Python 專案的入口是根目錄 app.py 的 WSGI app
+[tool.vercel]
+entrypoint = "app:app"
