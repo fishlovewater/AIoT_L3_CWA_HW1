@@ -34,11 +34,22 @@ class CwaError(Exception):
     """CWA 取得或解析失敗（訊息不含授權碼）。"""
 
 
+# 容忍常見的變數名拼法（CWA/CWB、有無底線），避免因命名不符而讀不到
+_KEY_ENV_NAMES = (
+    "CWA_API_KEY", "CWB_API_KEY", "CWA_APIKEY",
+    "CWA_KEY", "CWAAPIKEY", "API_KEY",
+)
+
+
 def get_api_key() -> str:
-    key = (os.environ.get("CWA_API_KEY") or "").strip()
-    if not key:
-        raise CwaError("找不到 CWA_API_KEY 環境變數。請在 Vercel 專案設定中加入。")
-    return key
+    for name in _KEY_ENV_NAMES:
+        val = (os.environ.get(name) or "").strip()
+        if val:
+            return val
+    raise CwaError(
+        "找不到授權碼環境變數。請在 Vercel 專案 Settings -> Environment Variables "
+        "新增名為 CWA_API_KEY 的變數（值為中央氣象署授權碼），並重新部署。"
+    )
 
 
 def _fetch_raw() -> dict:
@@ -56,10 +67,20 @@ def _fetch_raw() -> dict:
     except requests.RequestException as exc:
         raise CwaError(f"呼叫 CWA API 網路錯誤：{type(exc).__name__}") from exc
 
-    if resp.status_code == 401:
-        raise CwaError("CWA API 回應 401：授權碼無效。")
+    if resp.status_code in (401, 403):
+        raise CwaError("授權碼無效或未授權（HTTP %d）。請確認 CWA_API_KEY 正確且未過期。"
+                       % resp.status_code)
     if resp.status_code != 200:
         raise CwaError(f"CWA API 回應 HTTP {resp.status_code}")
+
+    text = resp.text.lstrip()
+    # CWA 對無效授權碼有時回傳非 JSON 的文字（例如 "Not Found"），明確診斷
+    if not text.startswith("{"):
+        snippet = text[:60].replace("\n", " ")
+        raise CwaError(
+            f"CWA API 未回傳 JSON（可能授權碼無效或格式錯誤）。回應開頭：「{snippet}」。"
+            "請確認 CWA_API_KEY 是有效的中央氣象署授權碼（格式類似 CWA-XXXXXXXX-...）。"
+        )
     try:
         data = resp.json()
     except ValueError as exc:
