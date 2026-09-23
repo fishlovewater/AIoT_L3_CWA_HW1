@@ -9,6 +9,7 @@ data.db
 # API response samples captured locally (may reveal query patterns)
 sample_response.json
 _probe_api.py
+_local_vercel_test.py
 
 # Python
 __pycache__/
@@ -18,6 +19,9 @@ __pycache__/
 .venv/
 venv/
 env/
+
+# Vercel
+.vercel/
 
 # OS / editor
 .DS_Store

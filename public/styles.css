@@ -1,0 +1,96 @@
+:root {
+  --text: #16324f;
+  --muted: #33506b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "SF Pro Text", "Segoe UI", "Microsoft JhengHei", sans-serif;
+  color: var(--text);
+  background: linear-gradient(135deg, #a8c9ff 0%, #c8e6ff 45%, #d9f6e6 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 液態玻璃卡片 */
+.glass {
+  background: rgba(255, 255, 255, 0.28);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 22px;
+  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.18);
+  padding: 18px 22px;
+}
+
+.glass-header { text-align: center; }
+.glass-header h1 { margin: 0; font-size: 1.7rem; }
+.glass-header p { margin: 4px 0 0; color: var(--muted); font-size: .92rem; }
+
+h2 { margin: 0 0 12px; font-size: 1.15rem; }
+
+.muted { color: var(--muted); font-size: .85rem; }
+.center { text-align: center; }
+
+.status {
+  background: rgba(255, 235, 200, 0.6);
+  border: 1px solid rgba(255,255,255,.5);
+  border-radius: 14px;
+  padding: 10px 14px;
+  color: #5a3c00;
+}
+
+.controls {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: .9rem;
+  flex: 1 1 200px;
+}
+select {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.6);
+  background: rgba(255,255,255,.55);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.warn {
+  background: rgba(255, 209, 102, 0.42);
+  color: #4a3200;
+  font-size: 1.05rem;
+}
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+th, td { padding: 8px 10px; text-align: center; border-bottom: 1px solid rgba(255,255,255,.5); }
+th { color: var(--muted); font-weight: 600; }
+
+#map { height: 460px; border-radius: 16px; overflow: hidden; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: .9rem; }
+.legend-dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,.15); }
+
+@media (max-width: 640px) {
+  .glass { padding: 14px; border-radius: 18px; }
+  .glass-header h1 { font-size: 1.35rem; }
+  #map { height: 360px; }
+}

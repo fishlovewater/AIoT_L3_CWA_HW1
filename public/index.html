@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>台灣天氣預報</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="glass glass-header">
+      <h1>☀️ 台灣天氣預報</h1>
+      <p id="source">資料來源：中央氣象署開放資料（逐 12 小時，彙整為每日）</p>
+      <p id="updated" class="muted"></p>
+    </header>
+
+    <div id="status" class="status" hidden></div>
+
+    <section class="glass controls">
+      <label>選擇縣市
+        <select id="region"></select>
+      </label>
+      <label>地圖日期
+        <select id="day"></select>
+      </label>
+    </section>
+
+    <section id="umbrella" class="glass warn" hidden></section>
+
+    <section class="glass">
+      <h2 id="chart-title">一週每日高低溫</h2>
+      <canvas id="chart" height="120"></canvas>
+    </section>
+
+    <section class="glass">
+      <h2>每日預報資料</h2>
+      <div class="table-wrap">
+        <table id="table">
+          <thead>
+            <tr><th>日期</th><th>最低溫(°C)</th><th>最高溫(°C)</th><th>降雨機率(%)</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="glass">
+      <h2 id="map-title">全台各縣市當日最高溫</h2>
+      <div id="map"></div>
+      <div class="legend" id="legend"></div>
+      <p class="muted">顏色代表各縣市「當日最高溫」。</p>
+    </section>
+
+    <footer class="muted center">
+      本頁為示範專案，實際數據以中央氣象署公告為準。
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
