@@ -29,7 +29,10 @@ def list_regions(path: Optional[str] = None) -> list[dict]:
     for r in df.itertuples(index=False):
         county = r.county or ""
         town = r.town or ""
-        label = f"{county} {town}".strip() or (r.geocode or "未知地區")
+        if county and town and county == town:
+            label = county
+        else:
+            label = f"{county} {town}".strip() or (r.geocode or "未知地區")
         regions.append({"label": label, "geocode": r.geocode})
     return regions
 

@@ -88,5 +88,40 @@ def demo_raw() -> dict:
 
 
 def demo_parse_result() -> ParseResult:
-    """回傳解析後的 ParseResult（DEMO）。"""
+    """回傳解析後的 ParseResult（DEMO）。
+    優先載入真實樣本檔（22 縣市完整預報），並自動平移日期對齊今日，
+    確保離線示範時具有全台 22 縣市真實數據。
+    """
+    import json
+    import os
+    for candidate in [
+        os.path.join(os.path.dirname(__file__), "real_sample_structure.json"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "sample_response.json"),
+    ]:
+        if os.path.exists(candidate):
+            try:
+                with open(candidate, encoding="utf-8") as f:
+                    data = json.load(f)
+                res = parse(data)
+                if res.records:
+                    # 計算日期偏移量（以第一筆 startTime 的日期與今日相比）
+                    first_start = res.records[0].get("startTime", "")
+                    if len(first_start) >= 10:
+                        first_date = datetime.strptime(first_start[:10], "%Y-%m-%d").date()
+                        today = datetime.now(_TZ).date()
+                        delta = today - first_date
+                        if delta.days != 0:
+                            for r in res.records:
+                                for key in ("startTime", "endTime"):
+                                    val = r.get(key)
+                                    if val and len(val) >= 10:
+                                        try:
+                                            dt = datetime.fromisoformat(val)
+                                            r[key] = (dt + delta).isoformat()
+                                        except Exception:
+                                            pass
+                    return res
+            except Exception:
+                pass
     return parse(demo_raw())
+

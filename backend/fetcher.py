@@ -126,18 +126,26 @@ def _get(d: dict, *names: str) -> Any:
 
 def _locations_container(data: dict) -> list[dict]:
     """取得 location 清單。相容：
-    新版：records.Locations[0].Location[]
-    舊版：records.locations[0].location[]
+    新版：records.Locations[].Location[]
+    舊版：records.locations[].location[]
     也容忍 records.location[]（無外層 Locations）。"""
     records = _get(data, "records", "Records") or {}
     # 外層 Locations / locations
     outer = _get(records, "Locations", "locations")
     if isinstance(outer, list) and outer:
-        first = outer[0] or {}
-        inner = _get(first, "Location", "location")
-        county = _get(first, "LocationsName", "locationsName", "DatasetDescription")
-        if isinstance(inner, list):
-            return [_with_parent(loc, county) for loc in inner]
+        locs = []
+        for item in outer:
+            if not isinstance(item, dict):
+                continue
+            inner = _get(item, "Location", "location")
+            c_name = _get(item, "LocationsName", "locationsName")
+            # 若為全國預報（LocationsName 為「臺灣」或「台灣」），則非單一縣市
+            if c_name in ("臺灣", "台灣", "Taiwan"):
+                c_name = None
+            if isinstance(inner, list):
+                locs.extend([_with_parent(loc, c_name) for loc in inner])
+        if locs:
+            return locs
     # 無外層，直接 location
     inner = _get(records, "Location", "location")
     if isinstance(inner, list):
