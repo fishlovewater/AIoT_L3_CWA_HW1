@@ -1,0 +1,10 @@
+[theme]
+# 淺色基底，讓液態玻璃的半透明與模糊效果更明顯
+base = "light"
+primaryColor = "#4a90d9"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
